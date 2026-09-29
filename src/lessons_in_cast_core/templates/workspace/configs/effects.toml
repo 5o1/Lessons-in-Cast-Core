@@ -1,0 +1,16 @@
+# Core supplies six defaults: fade_in, fade_out, telephone, monster,
+# censor_beep and glitch. Override their parameters here or add named presets
+# and chains, then list new names in annotation.allowed_effects.
+# Times are seconds relative to the audio entering each effect.
+
+# [presets.fade_out]
+# duration_seconds = 0.25
+
+# [presets.radio]
+# type = "telephone"
+# low_hz = 500.0
+# high_hz = 3000.0
+# bits = 8
+
+[chains]
+# fractured_entity = ["monster", "glitch", "fade_out"]

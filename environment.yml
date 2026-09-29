@@ -1,0 +1,9 @@
+name: lessons-in-cast-core
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - ffmpeg>=6
+  - pip
+  - pip:
+      - -e .[dev,reference]

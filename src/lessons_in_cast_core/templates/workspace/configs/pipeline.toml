@@ -1,0 +1,99 @@
+[galgame]
+backend = "renpy"
+
+[batching]
+target_size = 50
+context_before = 12
+context_after = 12
+max_characters = 40000
+
+[annotation]
+# Semantic labels the annotator may use. Register workspace-specific presets
+# with `lessons-in-cast emotion-presets add` before adding them here.
+allowed_emotions = [
+    "neutral",
+    "happy",
+    "sad",
+    "angry",
+    "afraid",
+    "surprised",
+    "disgusted",
+    "embarrassed",
+    "affectionate",
+    "excited",
+    "calm",
+    "confused",
+    "sarcastic",
+    "distressed",
+]
+# Line-level effects; the core defaults plus any chains from configs/effects.toml.
+allowed_effects = [
+    "fade_in",
+    "fade_out",
+    "glitch",
+    "telephone",
+    "monster",
+    "censor_beep",
+]
+maximum_length_ratio = 4.0
+minimum_length_ratio = 0.15
+
+[effects]
+config_path = "configs/effects.toml"
+
+[codex]
+batches_per_packet = 2
+source_files = [] # Release-relative scripts attached to Codex packets for context.
+prompt_path = "prompts/codex_dialogue_cleanup_v4.md"
+prompt_version = "cleaning-v4"
+polish_prompt_path = "prompts/codex_dialogue_polish.md"
+polish_prompt_version = "polish-v3"
+
+# Each annotation stage uses either the manual Codex packet exchange ("codex")
+# or an OpenAI-compatible Chat Completions API ("api"). For "api", fill in the
+# [<stage>.api] table and export the API key in the named environment variable.
+[cleaning]
+backend = "codex"
+
+# [cleaning.api]
+# base_url = "https://api.example.com/v1" # including /v1, without /chat/completions
+# model = "model-name"
+# api_key_environment = "LLM_API_KEY"
+# response_format = "json_schema" # or "json_object"; local schema validation still applies
+# context_window_tokens = 65536
+# max_completion_tokens = 8192
+# completion_token_parameter = "max_completion_tokens" # or "max_tokens"
+# max_repair_attempts = 2
+# timeout_seconds = 180
+# parallel_workers = 4
+
+[cleaning.context]
+recent_lines = 12
+lookahead_lines = 8
+memory_tokens = 1500
+
+[polish]
+backend = "codex"
+
+# [polish.api]
+# Same keys as [cleaning.api].
+
+[polish.context]
+recent_lines = 24
+lookahead_lines = 12
+memory_tokens = 3000
+
+[kantoku]
+directory = "kantoku"
+
+[audio]
+format = "opus" # or "wav"; opus requires ffmpeg/ffprobe with libopus
+intermediate_format = "wav"
+sample_rate = 48000
+channels = 1
+sample_width = 2
+bitrate_kbps = 48
+ffmpeg_executable = "ffmpeg"
+ffprobe_executable = "ffprobe"
+minimum_duration_seconds = 0.05
+maximum_duration_seconds = 120.0

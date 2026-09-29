@@ -1,0 +1,9 @@
+# Optional alignment executable using the core JSON stdin/stdout protocol.
+# No command is needed for anchors at the start/end of the entire dry audio.
+# Interior anchors fail explicitly until a measured alignment provider is set.
+[alignment]
+command = []
+revision = ""
+minimum_confidence = 0.8
+timeout_seconds = 600
+allow_unscored = false

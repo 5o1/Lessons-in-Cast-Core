@@ -1,0 +1,8 @@
+# Human-reviewed annotation overrides keyed by stable dialogue ID.
+# Values replace the corresponding model annotation fields.
+
+[dialogue]
+
+# [dialogue.0123456789abcdef01234567]
+# spoken_text = "Hmm?"
+# approved = true

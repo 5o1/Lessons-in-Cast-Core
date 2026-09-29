@@ -1,0 +1,5 @@
+# Paths are resolved relative to the workspace root.
+
+[workspace]
+# Directory of the unpacked game release that dialogue is extracted from.
+current_game_release = "{release}"

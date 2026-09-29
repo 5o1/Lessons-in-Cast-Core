@@ -1,0 +1,21 @@
+# Named dialogue ranges for small, reproducible runs (`prepare --scope NAME`).
+# Dialogue identifiers are the canonical boundaries; line numbers are for review.
+#
+# [scopes.example]
+# description = "A short opening exchange."
+# source = "game/script.rpy"
+# start_identifier = "start_00000000"
+# start_line = 1
+# end_identifier = "start_ffffffff"
+# end_line = 100
+# inclusive = true
+# voice_characters = ["a"]
+# context_only_characters = ["narrator"]
+#
+# Reassign a speaker inside a range, e.g. an unknown speaker before a reveal:
+# [[scopes.example.speaker_overrides]]
+# source_character = "q"
+# target_character = "a"
+# start_identifier = "start_00000000"
+# end_identifier = "start_ffffffff"
+# inclusive = true

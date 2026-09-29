@@ -1,0 +1,34 @@
+# Character mapping for the current game release.
+# Each speaker ID used by the game needs an entry. Leave default_voice_profile
+# empty to keep a character as context only; point it at a profile entrypoint
+# under profiles/ to voice it.
+#
+# Context-specific fields use this hierarchy and inherit from their parent:
+# [characters.<id>."relative/source/path.rpy".<nearest_label>.<nearest_scene>]
+# Missing label or scene context truncates matching at the preceding level.
+
+[characters.narrator]
+name = "Narrator"
+definition_path = "renpy/common/00definitions.rpy"
+definition_line = 1
+built_in = true
+default_voice_profile = ""
+
+# [characters.a]
+# name = "Example"
+# definition_path = "game/definitions.rpy"
+# definition_line = 1
+# built_in = false
+# default_voice_profile = "profiles/a_example/pipeline.py"
+#
+# An ensemble speaks in unison through its members' profiles; every member
+# needs its own character entry:
+# [characters.both]
+# name = "Both"
+# type = "ensemble"
+# members = ["a", "b"]
+# render_mode = "unison"
+# definition_path = "game/definitions.rpy"
+# definition_line = 2
+# built_in = false
+# default_voice_profile = ""

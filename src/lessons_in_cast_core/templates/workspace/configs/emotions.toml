@@ -1,0 +1,3 @@
+# Workspace semantic presets extend the core catalog; no backend vector values.
+# Register with: lessons-in-cast emotion-presets add NAME --description TEXT --example TEXT
+# Prepare backend mappings before adding NAME to annotation.allowed_emotions.

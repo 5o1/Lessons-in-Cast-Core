@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lessons-in-cast-core"
+version = "0.0.1"
+description = "Backend-agnostic dialogue-to-voice pipeline core for visual novels."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "5o1", email = "assanekowww@gmail.com" }]
+keywords = [
+    "visual-novel",
+    "galgame",
+    "renpy",
+    "text-to-speech",
+    "tts",
+    "voice-acting",
+    "dialogue",
+]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Games/Entertainment",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+dependencies = []
+
+[project.optional-dependencies]
+reference = ["librosa", "numpy", "soundfile"]
+dev = ["pytest"]
+
+[project.urls]
+Homepage = "https://github.com/5o1/Lessons-in-Cast-Core"
+Repository = "https://github.com/5o1/Lessons-in-Cast-Core"
+Issues = "https://github.com/5o1/Lessons-in-Cast-Core/issues"
+Changelog = "https://github.com/5o1/Lessons-in-Cast-Core/blob/main/CHANGELOG.md"
+
+[project.scripts]
+lessons-in-cast = "lessons_in_cast_core.cli:main"
+lessons-in-cast-voice-design = "lessons_in_cast_core.voice_design.cli:main"
+lessons-in-cast-audition = "lessons_in_cast_core.audition.cli:main"
+lessons-in-cast-effects = "lessons_in_cast_core.effects.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+lessons_in_cast_core = ["templates/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

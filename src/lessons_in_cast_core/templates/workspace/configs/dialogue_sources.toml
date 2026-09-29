@@ -1,0 +1,8 @@
+# Dialogue-bearing source files, relative to workspace.current_game_release.
+# Group names are free-form; every listed file is processed unless its group
+# is named excluded_by_default.
+
+[sources]
+main_story = [
+    # "game/script.rpy",
+]

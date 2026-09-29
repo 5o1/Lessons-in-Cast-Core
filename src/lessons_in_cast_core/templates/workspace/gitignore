@@ -1,0 +1,29 @@
+# Local game releases and extracted assets
+/game_releases/
+
+# Local model files and machine-specific model registry
+/models/
+/configs/model_sources.toml
+
+# Build products, pipeline intermediates and local reference audio
+/build/
+/profiles/**/assets/
+
+# Python environments and caches
+/.venv/
+/venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Logs and temporary files
+*.log
+*.tmp
+
+# Editor and operating-system metadata
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~

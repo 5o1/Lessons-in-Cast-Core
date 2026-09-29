@@ -1,0 +1,14 @@
+schema_version = 2
+
+# Backend-neutral pronunciations for proper nouns used in dialogue text.
+#
+# [proper_nouns.Example]
+# language = "en"
+# case_sensitive = false
+# whole_word = true
+# [proper_nouns.Example.forms]
+# arpabet = "IH0 G . Z AE1 M . P AH0 L"
+# ipa = "ɪɡˈzæm.pəl"
+# respelling = "ig-ZAM-pul"
+
+[proper_nouns]
