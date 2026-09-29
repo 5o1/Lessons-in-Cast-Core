@@ -36,7 +36,8 @@ class VoiceDesignTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
-        self.root = Path(temporary.name)
+        # Resolve so Windows 8.3 short temp paths match the resolved paths the code records.
+        self.root = Path(temporary.name).resolve()
         self.model_path = self.root / "models/test"
         self.model_path.mkdir(parents=True)
         (self.model_path / "config.json").write_text('{"architecture": "voxcpm2"}')

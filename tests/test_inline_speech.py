@@ -34,7 +34,8 @@ class InlineSpeechTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
-        self.root = Path(temporary.name)
+        # Resolve so Windows 8.3 short temp paths match the resolved paths the code records.
+        self.root = Path(temporary.name).resolve()
         self.default = self.root / "references/default.wav"
         write_wave(self.default)
         self.backend = IndexTtsSubprocessSynthesizer(repository_root=self.root,
