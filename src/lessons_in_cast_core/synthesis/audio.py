@@ -71,6 +71,7 @@ class WaveRenderer:
         *,
         audio_config: AudioConfig | None = None,
         keyframe_processor: KeyframeProcessor | None = None,
+        repository_root: Path | None = None,
     ) -> None:
         self._config = audio_config or AudioConfig()
         self._effect_processor = effect_processor if effect_processor is not None else CoreEffectProcessor(
@@ -79,6 +80,7 @@ class WaveRenderer:
             ffmpeg_executable=self._config.ffmpeg_executable,
         )
         self._keyframe_processor = keyframe_processor
+        self._repository_root = repository_root
 
     def render(
         self,
@@ -125,7 +127,7 @@ class WaveRenderer:
                 if task.keyframe_program["text"] != jobs_by_id[task.component_job_ids[0]].text:
                     raise AudioRenderError("Keyframe program does not match the synthesized text")
                 try:
-                    processor = self._keyframe_processor or KeyframeProcessor.from_repository()
+                    processor = self._keyframe_processor or KeyframeProcessor.from_repository(self._repository_root)
                     rendered = processor.process(
                         rendered, temporary_root / "keyframed.wav", task.keyframe_program,
                         cache_root=artifact_root / "alignment/cache",

@@ -207,23 +207,31 @@ class VoiceDesignTests(unittest.TestCase):
         self.assertEqual(list(output.parent.iterdir()), [])
 
     def test_cli_is_independent_of_game_configuration(self):
-        output = self.root / "build/test.wav"
-        result = VoiceDesignResult(output, output.with_suffix(".json"), 48000, 0.1)
-        with patch("lessons_in_cast_core.voice_design.cli.load_model_registry", return_value=self.registry):
-            with patch("lessons_in_cast_core.voice_design.cli.VoxCPM2VoiceDesigner") as factory:
-                factory.return_value.generate.return_value = result
-                stdout = io.StringIO()
-                with contextlib.redirect_stdout(stdout):
-                    code = main([
-                        "--root", str(self.root), "--text", "Hello",
-                        "--reference-audio", "reference.wav", "--output", "build/test.wav",
-                    ])
-                self.assertEqual(code, 0)
-                self.assertEqual(json.loads(stdout.getvalue())["audio_path"], str(output))
-                request, destination = factory.return_value.generate.call_args.args
-                self.assertEqual(request.reference_audio, self.root / "reference.wav")
-                self.assertEqual(destination, output)
-                factory.return_value.close.assert_called_once()
+        from lessons_in_cast_core.cli import main as unified_main
+
+        for entrypoint, prefix in (
+            (main, ["--root", str(self.root)]),
+            (unified_main, ["--root", str(self.root), "voice-design"]),
+            (unified_main, ["voice-design", "--root", str(self.root)]),
+        ):
+            with self.subTest(prefix=prefix):
+                output = self.root / "build/test.wav"
+                result = VoiceDesignResult(output, output.with_suffix(".json"), 48000, 0.1)
+                with patch("lessons_in_cast_core.voice_design.cli.load_model_registry", return_value=self.registry):
+                    with patch("lessons_in_cast_core.voice_design.cli.VoxCPM2VoiceDesigner") as factory:
+                        factory.return_value.generate.return_value = result
+                        stdout = io.StringIO()
+                        with contextlib.redirect_stdout(stdout):
+                            code = entrypoint([
+                                *prefix, "--text", "Hello",
+                                "--reference-audio", "reference.wav", "--output", "build/test.wav",
+                            ])
+                        self.assertEqual(code, 0)
+                        self.assertEqual(json.loads(stdout.getvalue())["audio_path"], str(output))
+                        request, destination = factory.return_value.generate.call_args.args
+                        self.assertEqual(request.reference_audio, self.root / "reference.wav")
+                        self.assertEqual(destination, output)
+                        factory.return_value.close.assert_called_once()
 
     def test_cli_reports_invalid_input_without_loading_backend(self):
         stderr = io.StringIO()

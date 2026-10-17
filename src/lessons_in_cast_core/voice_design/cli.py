@@ -7,7 +7,6 @@ import contextlib
 import json
 import sys
 from pathlib import Path
-from typing import Sequence
 
 from ..config import find_repository_root
 from ..model_registry import load_model_registry
@@ -15,9 +14,8 @@ from .types import VoiceDesignRequest
 from .voxcpm2 import VoxCPM2Settings, VoxCPM2VoiceDesigner
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="lessons-in-cast-voice-design")
-    parser.add_argument("--root", type=Path)
+def configure_parser(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--root", type=Path, default=argparse.SUPPRESS)
     parser.add_argument("--model-id", default="voxcpm2")
     parser.add_argument("--text", required=True, help="Spoken audition script.")
     parser.add_argument("--instruction", default="", help="Voice description or reference delivery guidance.")
@@ -30,8 +28,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--max-length", type=int, default=4096)
     parser.add_argument("--optimize", action="store_true", help="Enable upstream torch.compile and warm-up.")
     parser.add_argument("--retry-badcase", action="store_true", help="Enable upstream automatic generation retries.")
-    args = parser.parse_args(argv)
-    root = (args.root or find_repository_root()).expanduser().resolve()
+    parser.set_defaults(_handler=run, _command_parser=parser)
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(prog="lessons-in-cast-voice-design")
+    configure_parser(parser)
+    return run(parser.parse_args(argv))
+
+
+def run(args: argparse.Namespace) -> int:
+    root = (getattr(args, "root", None) or find_repository_root()).expanduser().resolve()
 
     def rooted(path: Path) -> Path:
         path = path.expanduser()

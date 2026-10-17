@@ -133,8 +133,8 @@ class AnnotationAgent:
             raise ValueError('Request stage does not match configured agent')
         from ..kantoku import Kantoku
         director = Kantoku(self.root, self.config, self.characters)
-        if any(r.get('kantoku_hash', director.fingerprint) != director.fingerprint for r in requests):
-            raise ValueError('Kantoku changed; prepare a fresh run')
+        for request in requests:
+            director.check_request(request)
         pool = {}
         for request in requests:
             for section in ('context_before', 'targets', 'context_interleaved', 'context_after'):
@@ -146,10 +146,15 @@ class AnnotationAgent:
         validation_config = asdict(self.config.annotation)
         for name in ('allowed_emotions', 'allowed_effects'):
             validation_config[name] = sorted(validation_config[name])
+        generation_settings = asdict(self.settings)
+        generation_settings['api'].pop('timeout_seconds', None)
+        used_characters = {row.get('character') or 'narrator' for row in records}
         settings = {'adapter': 'chat-completions-agent', 'version': 5,
-                    'stage': self.stage, 'settings': asdict(self.settings),
+                    'stage': self.stage, 'settings': generation_settings,
                     'prompt_sha256': file_hash(self.prompt_path), 'requests_sha256': file_hash(requests_path),
-                    'source_hash': content_hash(records), 'characters_hash': content_hash({k: asdict(v) for k, v in self.characters.items()}),
+                    'source_hash': content_hash(records),
+                    'characters_scope': sorted(used_characters),
+                    'characters_hash': content_hash({k: asdict(v) for k, v in self.characters.items() if k in used_characters}),
                     'source_files': list(source_files)}
         settings['validation_hash'] = content_hash(validation_config)
         if retry:

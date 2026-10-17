@@ -5,10 +5,12 @@ from __future__ import annotations
 import argparse
 import json
 import shlex
+import sys
 from pathlib import Path
 from typing import Sequence
 
 from .characters import CharacterDefinition, load_characters
+from .synthesis.audio import AudioRenderError
 from .config import (
     PipelineConfig,
     find_repository_root,
@@ -60,6 +62,13 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Overwrite existing files with the templates.",
     )
+    from .audition.cli import configure_parser as configure_audition
+    from .effects.cli import configure_parser as configure_effects
+    from .voice_design.cli import configure_parser as configure_voice_design
+
+    configure_audition(commands.add_parser("audition", help="Collect sides, render auditions, and record reviews."))
+    configure_voice_design(commands.add_parser("voice-design", help="Generate a voice-design audition."))
+    configure_effects(commands.add_parser("effects", help="List, render, and audition audio effects."))
     from .emotion_presets import register_cli
     register_cli(commands)
     commands.add_parser("check-config", help="Validate all project configuration.")
@@ -162,6 +171,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print(json.dumps(result.to_dict(), indent=2))
         return 0
+    if hasattr(args, "_handler"):
+        return args._handler(args)
     root = (args.root or find_repository_root()).resolve()
     if args.command == "emotion-presets":
         from .emotion_presets import cli_main
@@ -370,83 +381,90 @@ def main(argv: Sequence[str] | None = None) -> int:
     synthesizer = None
     if args.command in {"plan-tts", "synthesize", "run-production"}:
         synthesizer = _voice_profile_synthesizer(root, config, characters)
-    pipeline = DialoguePipeline(
-        config=config,
-        characters=characters,
-        synthesizer=synthesizer,
-        galgame_backend=galgame_backend,
-    )
-    if args.command == "prepare":
-        source = args.input or layout.dialogue_tab
-        counts = pipeline.prepare(
-            PipelineRequest(
-                artifact_root=layout.root,
-                dialogue_tab_path=source,
-                allowed_sources=sources,
-                dialogue_scope=dialogue_scope,
-                source_root=workspace.release_path,
-                prompt_version=config.codex.prompt_version,
+    try:
+        pipeline = DialoguePipeline(
+            config=config,
+            characters=characters,
+            synthesizer=synthesizer,
+            galgame_backend=galgame_backend,
+        )
+        if args.command == "prepare":
+            source = args.input or layout.dialogue_tab
+            counts = pipeline.prepare(
+                PipelineRequest(
+                    artifact_root=layout.root,
+                    dialogue_tab_path=source,
+                    allowed_sources=sources,
+                    dialogue_scope=dialogue_scope,
+                    source_root=workspace.release_path,
+                    prompt_version=config.codex.prompt_version,
+                )
             )
-        )
-        print(json.dumps({"dialogue_count": counts[0], "batch_count": counts[1]}))
-    elif args.command == "validate":
-        summary = pipeline.validate(
-            layout,
-            overrides_path=root / "configs" / "overrides.toml",
-            retry=args.retry,
-        )
-        print(json.dumps(summary.to_dict()))
-    elif args.command == "plan-tts":
-        jobs, renders = pipeline.plan_synthesis(layout)
-        print(json.dumps({"tts_job_count": jobs, "render_task_count": renders}))
-    elif args.command == "polish-prepare":
-        print(json.dumps({"batches": pipeline.prepare_polish(layout, prompt_path=root / config.codex.polish_prompt_path)}))
-    elif args.command == "polish-validate":
-        print(json.dumps(pipeline.validate_polish(layout, retry=args.retry).to_dict()))
-    elif args.command == "synthesize":
-        jobs, rendered = pipeline.synthesize(layout)
-        print(json.dumps({"tts_job_count": jobs, "rendered_count": rendered}))
-    elif args.command == "bundle":
-        print(
-            json.dumps(
-                {"bundled_audio_count": pipeline.build_release_bundle(layout)}
-            )
-        )
-    elif args.command == "run-production":
-        input_path = args.input if args.input.is_absolute() else root / args.input
-        responses_path = (
-            args.responses if args.responses.is_absolute() else root / args.responses
-        )
-        result = pipeline.run_from_responses(
-            PipelineRequest(
-                artifact_root=layout.root,
-                dialogue_tab_path=input_path,
-                allowed_sources=sources,
+            print(json.dumps({"dialogue_count": counts[0], "batch_count": counts[1]}))
+        elif args.command == "validate":
+            summary = pipeline.validate(
+                layout,
                 overrides_path=root / "configs" / "overrides.toml",
-                dialogue_scope=dialogue_scope,
-                source_root=workspace.release_path,
-                prompt_version=config.codex.prompt_version,
-            ),
-            responses_path,
-            polish_responses_path=(args.polish_responses if args.polish_responses.is_absolute() else root / args.polish_responses),
-            cache_intermediates=args.cache_intermediates,
-        )
-        print(
-            json.dumps(
-                {
-                    "dialogue_count": result.dialogue_count,
-                    "batch_count": result.batch_count,
-                    "accepted_count": result.accepted_count,
-                    "review_count": result.review_count,
-                    "retryable_count": result.retryable_count,
-                    "rejected_count": result.rejected_count,
-                    "tts_job_count": result.tts_job_count,
-                    "rendered_count": result.rendered_count,
-                    "release_bundle": str(result.artifacts.release_bundle),
-                    "release_patch": str(result.artifacts.release_patch),
-                    "intermediates_cached": args.cache_intermediates,
-                },
-                indent=2,
+                retry=args.retry,
             )
-        )
-    return 0
+            print(json.dumps(summary.to_dict()))
+        elif args.command == "plan-tts":
+            jobs, renders = pipeline.plan_synthesis(layout)
+            print(json.dumps({"tts_job_count": jobs, "render_task_count": renders}))
+        elif args.command == "polish-prepare":
+            print(json.dumps({"batches": pipeline.prepare_polish(layout, prompt_path=root / config.codex.polish_prompt_path)}))
+        elif args.command == "polish-validate":
+            print(json.dumps(pipeline.validate_polish(layout, retry=args.retry).to_dict()))
+        elif args.command == "synthesize":
+            jobs, rendered = pipeline.synthesize(layout)
+            print(json.dumps({"tts_job_count": jobs, "rendered_count": rendered}))
+        elif args.command == "bundle":
+            print(
+                json.dumps(
+                    {"bundled_audio_count": pipeline.build_release_bundle(layout)}
+                )
+            )
+        elif args.command == "run-production":
+            input_path = args.input if args.input.is_absolute() else root / args.input
+            responses_path = (
+                args.responses if args.responses.is_absolute() else root / args.responses
+            )
+            result = pipeline.run_from_responses(
+                PipelineRequest(
+                    artifact_root=layout.root,
+                    dialogue_tab_path=input_path,
+                    allowed_sources=sources,
+                    overrides_path=root / "configs" / "overrides.toml",
+                    dialogue_scope=dialogue_scope,
+                    source_root=workspace.release_path,
+                    prompt_version=config.codex.prompt_version,
+                ),
+                responses_path,
+                polish_responses_path=(args.polish_responses if args.polish_responses.is_absolute() else root / args.polish_responses),
+                cache_intermediates=args.cache_intermediates,
+            )
+            print(
+                json.dumps(
+                    {
+                        "dialogue_count": result.dialogue_count,
+                        "batch_count": result.batch_count,
+                        "accepted_count": result.accepted_count,
+                        "review_count": result.review_count,
+                        "retryable_count": result.retryable_count,
+                        "rejected_count": result.rejected_count,
+                        "tts_job_count": result.tts_job_count,
+                        "rendered_count": result.rendered_count,
+                        "release_bundle": str(result.artifacts.release_bundle),
+                        "release_patch": str(result.artifacts.release_patch),
+                        "intermediates_cached": args.cache_intermediates,
+                    },
+                    indent=2,
+                )
+            )
+        return 0
+    except AudioRenderError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    finally:
+        if synthesizer is not None and args.command != "run-production":
+            synthesizer.close()

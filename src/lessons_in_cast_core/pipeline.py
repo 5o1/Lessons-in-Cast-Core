@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import shutil
-from dataclasses import asdict
+import tempfile
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
 
@@ -79,6 +80,7 @@ class DialoguePipeline:
             CoreEffectProcessor(config.effects, sample_rate=config.audio.sample_rate,
                                 channels=config.audio.channels, ffmpeg_executable=config.audio.ffmpeg_executable),
             audio_config=config.audio,
+            repository_root=config.repository_root,
         )
         self._validation = AnnotationValidationStage(config)
 
@@ -356,10 +358,12 @@ class DialoguePipeline:
         scheduled_jobs = order_jobs(jobs) if callable(order_jobs) else jobs
         for job in scheduled_jobs:
             job_count += 1
-            if (layout.root / job.output_path).is_file():
-                reused_job_count += 1
-            else:
-                self._synthesizer.synthesize(job, layout.root)
+            self._synthesizer.synthesize(job, layout.root)
+            reused = getattr(self._synthesizer, "last_cache_hit", None)
+            if reused is None:
+                reused_job_count = None
+            elif reused_job_count is not None:
+                reused_job_count += int(reused)
 
         checker = AudioQualityChecker(self._config.audio)
         rendered = 0
@@ -448,9 +452,12 @@ class DialoguePipeline:
                     )
                 ),
             )
+        planning_failures = sum(1 for _ in read_jsonl(layout.synthesis_issues))
+        incomplete = quality_failures or planning_failures
         update_run_manifest(
             layout,
             {
+                "synthesis_status": ("partial" if rendered else "failed") if incomplete else "complete",
                 "synthesizer": self._synthesizer.name,
                 "tts_job_count": job_count,
                 "tts_job_reused": reused_job_count,
@@ -458,12 +465,25 @@ class DialoguePipeline:
                 "audio_quality_failure_count": quality_failures,
             },
         )
+        if incomplete:
+            raise AudioRenderError(
+                f"Synthesis incomplete: {rendered} rendered, {quality_failures} audio failures, "
+                f"{planning_failures} planning issues; see {layout.run_manifest}"
+            )
         return job_count, rendered
 
     def build_release_bundle(self, layout: ArtifactLayout) -> int:
         """Create a game-relative directory without mutating the source release."""
 
+        if layout.synthesis_issues.is_file() and any(read_jsonl(layout.synthesis_issues)):
+            raise AudioRenderError("Cannot bundle an incomplete synthesis plan")
         with JsonlIndex(layout.audio_quality, "dialogue_id") as quality_index:
+            # Validate every requested output before the installer writes a bundle.
+            for value in read_jsonl(layout.render_tasks):
+                quality = quality_index.get(value["dialogue_id"])
+                if quality is None or quality.get("valid") is not True:
+                    raise AudioRenderError(f"Cannot bundle failed or unchecked audio: {value['dialogue_id']}")
+
             def install_artifacts() -> Any:
                 for value in read_jsonl(layout.render_tasks):
                     task = RenderTask.from_dict(value)
@@ -510,61 +530,62 @@ class DialoguePipeline:
         source_dialogue = request.dialogue_tab_path.resolve()
         source_responses = responses_path.resolve()
         source_polish = polish_responses_path.resolve()
-        if not source_polish.is_file():
-            raise FileNotFoundError(source_polish)
-        if not cache_intermediates and (
-            source_dialogue.is_relative_to(layout.root)
-            or source_responses.is_relative_to(layout.root)
-            or source_polish.is_relative_to(layout.root)
-        ):
-            raise ValueError(
-                "Production inputs must be outside the artifact directory when "
-                "intermediate caching is disabled"
-            )
-        layout.root.mkdir(parents=True, exist_ok=True)
-        layout.reset_generated()
-        dialogue_count, batch_count = self.prepare(request)
-        shutil.copy2(source_responses, layout.annotation_responses)
-        try:
-            validated = self.validate(
-                layout,
-                overrides_path=request.overrides_path,
-            )
-            self.prepare_polish(layout)
-            shutil.copy2(source_polish, layout.polish.annotation_responses)
-            validated = self.validate_polish(layout)
-            tts_job_count, _ = self.plan_synthesis(layout)
-            _, rendered_count = self.synthesize(layout)
-            self.build_release_bundle(layout)
-            result = PipelineResult(
-                artifacts=layout,
-                dialogue_count=dialogue_count,
-                batch_count=batch_count,
-                accepted_count=validated.accepted_count,
-                review_count=validated.review_required_count,
-                retryable_count=validated.retryable_count,
-                rejected_count=validated.rejected_count,
-                tts_job_count=tts_job_count,
-                rendered_count=rendered_count,
-            )
-            update_run_manifest(
-                layout,
-                {
-                    "production": {
-                        "annotation_responses": str(source_responses),
-                        "cache_intermediates": cache_intermediates,
-                        "retained_paths": (
-                            ["release_bundle", "lessons_in_cast_voice_patch.zip", "run_manifest.json"]
-                            if not cache_intermediates
-                            else ["all"]
-                        ),
-                    }
-                },
-            )
-            if not cache_intermediates:
-                layout.discard_intermediates()
-            return result
-        finally:
-            close = getattr(self._synthesizer, "close", None)
-            if close is not None:
-                close()
+        inputs = [source_dialogue, source_responses, source_polish]
+        if request.overrides_path is not None and request.overrides_path.is_file():
+            inputs.append(request.overrides_path.resolve())
+        for source in inputs:
+            if not source.is_file():
+                raise FileNotFoundError(source)
+        files, directories = layout.reset_targets()
+        # Only protect inputs that this cleanup can actually remove.
+        with tempfile.TemporaryDirectory(prefix="lic-production-inputs-") as temporary:
+            snapshots = {}
+            for index, source in enumerate(inputs):
+                if source in files or any(source.is_relative_to(directory) for directory in directories):
+                    snapshot = Path(temporary) / f"{index}{source.suffix}"
+                    shutil.copy2(source, snapshot)
+                    snapshots[source] = snapshot
+            try:
+                layout.root.mkdir(parents=True, exist_ok=True)
+                layout.reset_generated()
+                if source_dialogue in snapshots:
+                    source_dialogue.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(snapshots[source_dialogue], source_dialogue)
+                # Keep the original dialogue location: backends use its parent
+                # for source context when no source_root was explicitly supplied.
+                prepared_request = replace(request,
+                    overrides_path=snapshots.get(request.overrides_path.resolve(), request.overrides_path) if request.overrides_path is not None else None)
+                dialogue_count, batch_count = self.prepare(prepared_request)
+                shutil.copy2(snapshots.get(source_responses, source_responses), layout.annotation_responses)
+                self.validate(layout, overrides_path=prepared_request.overrides_path)
+                self.prepare_polish(layout)
+                shutil.copy2(snapshots.get(source_polish, source_polish), layout.polish.annotation_responses)
+                validated = self.validate_polish(layout)
+                tts_job_count, rendered_count = self.synthesize(layout)
+                self.build_release_bundle(layout)
+                result = PipelineResult(
+                    artifacts=layout, dialogue_count=dialogue_count, batch_count=batch_count,
+                    accepted_count=validated.accepted_count, review_count=validated.review_required_count,
+                    retryable_count=validated.retryable_count, rejected_count=validated.rejected_count,
+                    tts_job_count=tts_job_count, rendered_count=rendered_count,
+                )
+                update_run_manifest(layout, {"production": {
+                    "annotation_responses": str(source_responses),
+                    "polish_responses": str(source_polish),
+                    "cache_intermediates": cache_intermediates,
+                    "preserved_inputs": [str(path.relative_to(layout.root)) for path in inputs if path.is_relative_to(layout.root)],
+                    "retained_paths": (["release_bundle", "lessons_in_cast_voice_patch.zip", "run_manifest.json"]
+                                       if not cache_intermediates else ["all"]),
+                }})
+                if not cache_intermediates:
+                    layout.discard_intermediates()
+                return result
+            finally:
+                try:
+                    for source, snapshot in snapshots.items():
+                        source.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(snapshot, source)
+                finally:
+                    close = getattr(self._synthesizer, "close", None)
+                    if close is not None:
+                        close()

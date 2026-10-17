@@ -88,6 +88,10 @@ jobs:
           mkdir workspace && cd workspace
           lessons-in-cast init
           lessons-in-cast check-config
+          licc --help > /dev/null
+          licc audition --help > /dev/null
+          licc voice-design --help > /dev/null
+          licc effects list > /dev/null
           lessons-in-cast-effects --help > /dev/null
           lessons-in-cast-audition --help > /dev/null
           lessons-in-cast-voice-design --help > /dev/null

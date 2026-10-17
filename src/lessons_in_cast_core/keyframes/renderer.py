@@ -42,8 +42,8 @@ class KeyframeProcessor:
         self.allow_unscored = allow_unscored
 
     @classmethod
-    def from_repository(cls):
-        root = find_repository_root()
+    def from_repository(cls, root: Path | None = None):
+        root = root or find_repository_root()
         path = root / "configs/keyframes.toml"
         config = tomllib.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
         return cls(**config.get("alignment", {}), pronunciation_path=root / "configs/pronunciations.toml")

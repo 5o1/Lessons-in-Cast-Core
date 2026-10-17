@@ -6,10 +6,14 @@ import json
 import os
 import re
 import subprocess
+import tempfile
+import wave
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from ....config import AudioConfig
+from ....hashing import content_hash, file_hash
 from ....paths import SOURCE_ROOT
 from ....performance import (
     AdaptationFidelity,
@@ -188,6 +192,7 @@ class IndexTtsSubprocessSynthesizer:
                                  for name, values in (EMOTION_VECTORS if emotion_vectors is None else emotion_vectors).items()}
         self._emotion_mapping_id = emotion_mapping_id or "legacy-manual-presets"
         self._process: subprocess.Popen[str] | None = None
+        self.last_cache_hit = False
 
     @property
     def name(self) -> str:
@@ -195,6 +200,12 @@ class IndexTtsSubprocessSynthesizer:
 
     @property
     def configuration(self) -> dict[str, Any]:
+        return self._configuration(self._references, {
+            key: voice_reference_fingerprint(paths[0])
+            for key, paths in self._references.items() if paths
+        })
+
+    def _configuration(self, references, voice_references) -> dict[str, Any]:
         return {
             "adapter": self.name,
             "model_path": str(self._model),
@@ -206,7 +217,7 @@ class IndexTtsSubprocessSynthesizer:
             "inference": dict(self._inference),
             "references": {
                 key: [str(path) for path in paths]
-                for key, paths in sorted(self._references.items())
+                for key, paths in sorted(references.items())
             },
             "pronunciations": dict(sorted(self._pronunciations.items())),
             "pronunciation_rules": [
@@ -218,8 +229,7 @@ class IndexTtsSubprocessSynthesizer:
             "expressive_pause": self._expressive_pause,
             "emotion_vectors": self._emotion_vectors,
             "emotion_mapping_id": self._emotion_mapping_id,
-            "voice_references": {key: voice_reference_fingerprint(paths[0])
-                                 for key, paths in self._references.items() if paths},
+            "voice_references": voice_references,
         }
 
     def set_references(
@@ -244,11 +254,59 @@ class IndexTtsSubprocessSynthesizer:
 
     def synthesize(self, job: TtsJob, artifact_root: Path) -> Path:
         destination = (artifact_root / job.output_path).resolve()
-        if destination.is_file():
-            return destination
+        binding_path = destination.with_suffix(".synthesis.json")
+        request = job.to_dict()
+        for key in ("id", "dialogue_id", "output_path", "cache_key"):
+            request.pop(key, None)
+        references = self._references.get(job.character_id, ())
+        voices = [span.voice for span in job.segments] if job.segments else [job.voice]
+        used = list(references) if None in voices else []
+        for voice in dict.fromkeys(voices):
+            if voice is not None:
+                used.append(self._voice_reference(replace(job, voice=voice)))
+        configuration = self._configuration(
+            {job.character_id: used},
+            {str(path): file_hash(path) for path in dict.fromkeys(used)},
+        )
+        identity = content_hash({"request": request, "backend": configuration,
+                                 "audio": asdict(self._audio)})
+        self.last_cache_hit = False
+        if destination.is_file() and binding_path.is_file():
+            try:
+                saved = json.loads(binding_path.read_text(encoding="utf-8"))
+            except (ValueError, OSError):
+                saved = {}
+            if isinstance(saved, dict) and saved.get("request") == identity and saved.get("audio") == file_hash(destination):
+                self.last_cache_hit = True
+                return destination
+        destination.parent.mkdir(parents=True, exist_ok=True)
         if job.segments:
             self.adapt(job)
-            return synthesize_segments(job, artifact_root, self.synthesize)
+            # Segment outputs have their own identities and atomic publication;
+            # keep completed segments available if a later segment fails.
+            synthesize_segments(job, artifact_root, self.synthesize)
+        else:
+            with tempfile.TemporaryDirectory(prefix=".index-tts-", dir=destination.parent) as temporary:
+                staged = Path(temporary) / "take.wav"
+                self._synthesize(replace(job, output_path=str(staged)), artifact_root)
+                with wave.open(str(staged)) as audio:
+                    if audio.getnframes() <= 0 or len(audio.readframes(audio.getnframes())) != audio.getnframes() * audio.getnchannels() * audio.getsampwidth():
+                        raise RuntimeError("IndexTTS returned empty or truncated audio")
+                staged.replace(destination)
+                for suffix in (".frontend.json", ".emotion.json"):
+                    sidecar = staged.with_suffix(suffix)
+                    if sidecar.is_file():
+                        sidecar.replace(destination.with_suffix(suffix))
+                    else:
+                        destination.with_suffix(suffix).unlink(missing_ok=True)
+        temporary = binding_path.with_suffix(".json.tmp")
+        temporary.write_text(json.dumps({"request": identity, "audio": file_hash(destination)}) + "\n", encoding="utf-8")
+        temporary.replace(binding_path)
+        self.last_cache_hit = False
+        return destination
+
+    def _synthesize(self, job: TtsJob, artifact_root: Path) -> Path:
+        destination = (artifact_root / job.output_path).resolve()
         references = self._references.get(job.character_id)
         if references is None:
             raise RuntimeError(

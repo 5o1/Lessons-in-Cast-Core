@@ -36,10 +36,15 @@ class VoiceProfileContext:
     def resolve_repository_path(self, relative_path: str | Path) -> Path:
         """Resolve a workspace dependency while keeping it inside the repository."""
 
-        path = Path(relative_path)
-        if path.is_absolute():
-            raise ValueError(f"Repository path must be relative: {path}")
-        resolved = Path(os.path.abspath(self.repository_root / path))
-        if not resolved.is_relative_to(self.repository_root):
-            raise ValueError(f"Repository path escapes the workspace: {path}")
-        return resolved
+        return resolve_repository_path(self.repository_root, relative_path)
+
+
+def resolve_repository_path(root: Path, relative_path: str | Path) -> Path:
+    """Resolve a workspace path lexically, preserving interpreter symlinks."""
+    path = Path(relative_path)
+    if path.is_absolute():
+        raise ValueError(f"Repository path must be relative: {path}")
+    resolved = Path(os.path.abspath(root / path))
+    if not resolved.is_relative_to(root):
+        raise ValueError(f"Repository path escapes the workspace: {path}")
+    return resolved

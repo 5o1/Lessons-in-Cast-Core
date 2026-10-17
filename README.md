@@ -47,6 +47,28 @@ Commands operate on a workspace root, located by searching upward from the
 current directory for `configs/workspace.toml` (or passed explicitly with
 `--root` / `repository_root=`). Generated artifacts go under `build/`.
 
+## Command line
+
+Install with `python -m pip install -e .` from this repository for development.
+Production workspaces install a versioned wheel instead of keeping Core source. `licc` is an alias for `lessons-in-cast`:
+
+```bash
+licc --help
+licc check-config
+licc audition --help
+licc voice-design --help
+licc effects list
+```
+
+Use `--root /path/to/workspace` before the subcommand, or after `audition`,
+`voice-design`, or `effects`. For effects, `--root` selects the workspace for
+saved audition runs; explicit relative file paths remain relative to the working
+directory. Effects listing/rendering do not require a game workspace.
+The standalone `lessons-in-cast-audition`, `lessons-in-cast-voice-design`, and
+`lessons-in-cast-effects` entry points remain available for existing scripts.
+Module invocation also works: `python -m lessons_in_cast_core audition --help`.
+Reinstall the package after updating to generate the new `licc` executable.
+
 ## Development
 
 ```bash
