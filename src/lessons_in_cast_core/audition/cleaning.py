@@ -30,7 +30,7 @@ def annotation_configuration(config) -> dict:
 def workflow(root: Path, directory: Path, *, stage: str = "cleaning") -> CodexAnnotationWorkflow:
     config = load_pipeline_config(repository_root=root)
     # Audition targets span all chapters; do not inherit the production demo filter.
-    prefix = "python -m lessons_in_cast_core.audition"
+    prefix = "python -m lessons_in_cast_core audition"
     return CodexAnnotationWorkflow(root / (config.codex.polish_prompt_path if stage == "polish" else config.codex.prompt_path),
         {key: character.name for key, character in load_characters(repository_root=root).items()},
         task_commands=(f"{prefix} {stage}-import --cleaning {shlex.quote(str(directory))}",

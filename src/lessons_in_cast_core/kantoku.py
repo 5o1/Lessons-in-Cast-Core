@@ -7,7 +7,7 @@ from pathlib import Path, PurePosixPath
 import tomllib
 
 from .config import ConfigurationError
-from .hashing import content_hash, file_hash
+from .hashing import content_hash
 
 
 class Kantoku:
@@ -26,7 +26,7 @@ class Kantoku:
             if name in self.files:
                 raise ConfigurationError(f'Duplicate Kantoku source: {name}')
             self.files[name] = node
-            hashes[str(path.relative_to(self.root))] = file_hash(path)
+            hashes[str(path.relative_to(self.root))] = content_hash(node)
         self.fingerprint = content_hash(hashes)
 
     def _validate(self, node, depth):
@@ -117,6 +117,23 @@ class Kantoku:
                 for character, values in node.get(field, {}).items():
                     result[field].setdefault(character, {}).update(deepcopy(values))
         return result
+
+    def check_request(self, request) -> None:
+        """Reject changes to direction actually used by this request."""
+        snapshots = request.get('direction_context')
+        if snapshots is None:
+            if request.get('kantoku_hash', self.fingerprint) != self.fingerprint:
+                raise ValueError('Kantoku changed; prepare a fresh run')
+            return
+        for section in ('context_before', 'targets', 'context_interleaved', 'context_after'):
+            for row in request['batch'].get(section, []):
+                current = self.resolve(row)
+                previous = snapshots.get(row['id'], {})
+                # Sources/hashes and scene discovery offsets are provenance; compare
+                # the effective instructions, including inherited values and renders.
+                if any(previous.get(key) != current.get(key)
+                       for key in ('prompts', 'characters', 'render', 'continuity_from')):
+                    raise ValueError('Kantoku changed for this request; prepare a fresh run')
 
     def profile_variants(self):
         def visit(node):

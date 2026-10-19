@@ -84,9 +84,8 @@ class PolishStage:
         from ..characters import load_characters
         root = self.config.repository_root or find_repository_root()
         director = Kantoku(root, self.config, load_characters(repository_root=root))
-        if any(row.get("kantoku_hash", director.fingerprint) != director.fingerprint
-               for row in read_jsonl(layout.annotation_requests)):
-            raise ValueError("Kantoku changed; prepare a fresh run")
+        for request in read_jsonl(layout.annotation_requests):
+            director.check_request(request)
         if (content_hash(metadata["cleaning_inputs"]) != content_hash(self._inputs(layout))
                 or metadata["prompt_sha256"] != file_hash(Path(metadata["prompt"]))
                 or metadata["raw_sha256"] != file_hash(child.raw_dialogue)

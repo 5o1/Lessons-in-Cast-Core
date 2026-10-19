@@ -181,6 +181,10 @@ class VoiceProfileSynthesizer:
         self._activate(pipeline)
         return pipeline.render(job, artifact_root)
 
+    @property
+    def last_cache_hit(self) -> bool | None:
+        return getattr(self._active_pipeline, "last_cache_hit", None)
+
     def adapt(self, job: TtsJob) -> SpeechAdaptation:
         """Route backend lowering while retaining a serializable audit record."""
 

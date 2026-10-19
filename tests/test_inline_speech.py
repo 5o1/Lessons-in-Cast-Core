@@ -149,6 +149,65 @@ class InlineSpeechTests(unittest.TestCase):
         self.backend.synthesize(job, self.root)
         self.assertEqual(len(requests), 2)
 
+    def test_fixed_output_cache_tracks_text_settings_reference_and_corruption(self):
+        calls = []
+
+        def exchange(request):
+            calls.append(request)
+            write_wave(Path(request["output"]), len(calls))
+            return {"ok": True}
+
+        self.backend._exchange = exchange
+        job = replace(self.job, text="First!", segments=())
+        destination = self.root / job.output_path
+        destination.parent.mkdir(parents=True)
+        destination.write_bytes(b"unattributed old audio")
+        self.backend.synthesize(job, self.root)
+        self.assertFalse(self.backend.last_cache_hit)
+        self.backend.synthesize(job, self.root)
+        self.assertTrue(self.backend.last_cache_hit)
+        self.assertEqual(len(calls), 1)
+        write_wave(self.default.parent / "unused-voice.wav", value=4)
+        self.backend.synthesize(job, self.root)
+        self.assertTrue(self.backend.last_cache_hit)
+        # Keep the caller's cache key and output path unchanged on purpose.
+        job = replace(job, text="Second!")
+        self.backend.synthesize(job, self.root)
+        self.backend.set_expressive_pause("native")
+        self.backend.synthesize(job, self.root)
+        write_wave(self.default, value=7)
+        self.backend.synthesize(job, self.root)
+        destination.write_bytes(b"truncated")
+        self.backend.synthesize(job, self.root)
+        self.assertEqual(len(calls), 5)
+        self.assertEqual(calls[-1]["text"], "Second!")
+        self.backend.synthesize(job, self.root)
+        self.assertTrue(self.backend.last_cache_hit)
+        self.assertEqual(len(calls), 5)
+
+    def test_failed_single_take_keeps_previous_output_and_retries(self):
+        job = replace(self.job, text="First.", segments=())
+        output = self.root / job.output_path
+        output.parent.mkdir(parents=True)
+        output.write_bytes(b"previous output")
+        calls = []
+
+        def exchange(request):
+            calls.append(request)
+            write_wave(Path(request["output"]))
+            if len(calls) == 1:
+                raise RuntimeError("worker interrupted")
+            return {"ok": True}
+
+        self.backend._exchange = exchange
+        with self.assertRaisesRegex(RuntimeError, "interrupted"):
+            self.backend.synthesize(job, self.root)
+        self.assertEqual(output.read_bytes(), b"previous output")
+        self.backend.synthesize(job, self.root)
+        with wave.open(str(output)) as audio:
+            self.assertGreater(audio.getnframes(), 0)
+        self.assertEqual(len(calls), 2)
+
     def test_missing_voice_stops_before_any_generation(self):
         self.backend._exchange = Mock()
         job = replace(self.job, segments=(self.segments[0], replace(self.segments[1], voice="missing")))

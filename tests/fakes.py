@@ -100,3 +100,27 @@ class SilenceSynthesizer:
             output.setframerate(self._config.sample_rate)
             output.writeframes(frame * frame_count)
         return destination
+
+
+class RecordingSynthesizer(SilenceSynthesizer):
+    """Record backend invocations and optionally return invalid audio."""
+
+    def __init__(self, config):
+        super().__init__(config)
+        self.calls = []
+        self.invalid_text = None
+        self.closed = False
+        self.last_cache_hit = False
+
+    def synthesize(self, job, artifact_root):
+        self.calls.append(job)
+        destination = artifact_root / job.output_path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if self.invalid_text in (job.text, "*"):
+            destination.write_bytes(b"invalid audio")
+            return destination
+        destination.unlink(missing_ok=True)
+        return super().synthesize(job, artifact_root)
+
+    def close(self):
+        self.closed = True

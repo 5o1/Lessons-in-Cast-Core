@@ -12,11 +12,11 @@ from .processor import CoreEffectProcessor
 from .pcm import read_pcm
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+def configure_parser(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--root", type=Path, default=argparse.SUPPRESS)
     parser.add_argument("--config", type=Path, help="Effects TOML; omitted uses core defaults")
     parser.add_argument("--ffmpeg", default="ffmpeg")
-    commands = parser.add_subparsers(dest="command", required=True)
+    commands = parser.add_subparsers(dest="effects_command", required=True)
     commands.add_parser("list", help="Print resolved presets and chains")
     render = commands.add_parser("render", help="Apply an ordered chain to a PCM WAV")
     render.add_argument("--input", type=Path, help="Omit for an effect-only beep")
@@ -26,21 +26,30 @@ def main(argv: list[str] | None = None) -> int:
     audition.add_argument("--input", type=Path, required=True)
     audition.add_argument("--project", type=Path, default=Path("auditions/effects/project.toml"))
     audition.add_argument("--run", required=True)
-    args = parser.parse_args(argv)
+    parser.set_defaults(_handler=run, _command_parser=parser)
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    configure_parser(parser)
+    return run(parser.parse_args(argv))
+
+
+def run(args: argparse.Namespace) -> int:
     try:
         library = load_effect_library(args.config)
         processor = CoreEffectProcessor(library, ffmpeg_executable=args.ffmpeg)
-        if args.command == "list":
+        if args.effects_command == "list":
             print(json.dumps({**library.to_dict(), "descriptions": DESCRIPTIONS}, indent=2))
             return 0
-        if args.command == "render":
+        if args.effects_command == "render":
             if args.output.exists() or args.output.with_suffix(".effects.json").exists():
                 raise EffectError("Output already exists; choose a new output path")
             print(processor.process(args.input, args.output, tuple(args.effects)))
             return 0
         from ..config import find_repository_root
         from ..audition.types import slug
-        root = find_repository_root()
+        root = (getattr(args, "root", None) or find_repository_root()).resolve()
         slug(args.run)
         with args.project.open("rb") as stream:
             project = tomllib.load(stream)
@@ -88,5 +97,5 @@ def main(argv: list[str] | None = None) -> int:
         print(directory)
         return 0
     except (EffectError, OSError, ValueError, tomllib.TOMLDecodeError) as exc:
-        parser.error(str(exc))
+        args._command_parser.error(str(exc))
         return 2

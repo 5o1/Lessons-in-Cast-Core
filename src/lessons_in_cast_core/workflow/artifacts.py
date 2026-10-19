@@ -118,9 +118,8 @@ class ArtifactLayout:
     def release_patch(self) -> Path:
         return self.root / "lessons_in_cast_voice_patch.zip"
 
-    def reset_generated(self) -> None:
-        """Remove only pipeline-owned paths from an earlier run."""
-
+    def reset_targets(self) -> tuple[tuple[Path, ...], tuple[Path, ...]]:
+        """Return the files and directory trees removed by reset_generated."""
         files = (
             self.dialogue_tab,
             self.raw_dialogue,
@@ -146,9 +145,7 @@ class ArtifactLayout:
             self.audio_effects,
             self.release_patch,
         )
-        for path in files:
-            path.unlink(missing_ok=True)
-        for directory in (
+        directories = (
             self.root / "audio",
             self.root / "voice",
             self.root / "codex",
@@ -156,7 +153,15 @@ class ArtifactLayout:
             self.polish.root,
             self.galgame_artifacts,
             self.release_bundle,
-        ):
+        )
+        return files, directories
+
+    def reset_generated(self) -> None:
+        """Remove only pipeline-owned paths from an earlier run."""
+        files, directories = self.reset_targets()
+        for path in files:
+            path.unlink(missing_ok=True)
+        for directory in directories:
             if directory.exists():
                 shutil.rmtree(directory)
 
